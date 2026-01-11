@@ -4,12 +4,108 @@
     <title>Cuby - OAuth Callback</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        /* Keep your existing styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .logo {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4285f4;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        p {
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        
+        .success {
+            color: #34a853;
+        }
+        
+        .error {
+            color: #ea4335;
+        }
+        
+        .btn {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn:hover {
+            background: #3367d6;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(66, 133, 244, 0.3);
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .countdown {
+            font-size: 14px;
+            color: #888;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="logo">🧊</div>
+        <div class="logo"></div>
         
         <div id="loading">
             <div class="spinner"></div>
@@ -18,37 +114,68 @@
         </div>
         
         <div id="success" class="hidden">
-            <h1 class="success">✅ Success!</h1>
-            <p>Sign in successful. Returning to Cuby...</p>
-            <p id="countdown">Closing in 3 seconds</p>
+            <h1 class="success">Success!</h1>
+            <p>Sign in successful. You can now close this window.</p>
+            <p class="countdown" id="countdown">Auto-closing in 3 seconds...</p>
+            <button class="btn" onclick="closeWindow()">Close Window Now</button>
         </div>
         
         <div id="error" class="hidden">
             <h1 class="error">❌ Sign In Failed</h1>
             <p id="error-message"></p>
-            <button class="btn" onclick="window.close()">Close</button>
+            <button class="btn" onclick="closeWindow()">Close</button>
         </div>
     </div>
 
     <script>
+        // Configuration
+        const CONFIG = {
+            debug: true,
+            autoClose: true,
+            closeDelay: 3000
+        };
+        
         async function handleOAuthCallback() {
-            console.log('Processing OAuth callback...');
+            console.log('=== CUBY OAuth Callback Handler ===');
+            console.log('URL:', window.location.href);
             
             try {
-                // Parse the URL fragment (#access_token=...)
-                const fragment = window.location.hash.substring(1);
-                const params = new URLSearchParams(fragment);
+                // Get token from URL fragment or query parameters
+                let accessToken = null;
+                let idToken = null;
+                let state = null;
+                let error = null;
                 
-                const accessToken = params.get('access_token');
-                const idToken = params.get('id_token');
-                const state = params.get('state');
-                const error = params.get('error');
+                // Check URL fragment first (#access_token=...)
+                if (window.location.hash) {
+                    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+                    accessToken = hashParams.get('access_token');
+                    idToken = hashParams.get('id_token');
+                    state = hashParams.get('state');
+                    error = hashParams.get('error');
+                    
+                    console.log('From fragment - Access Token:', accessToken ? 'Yes' : 'No');
+                    console.log('From fragment - ID Token:', idToken ? 'Yes' : 'No');
+                }
                 
-                console.log('Access Token:', accessToken ? 'Yes' : 'No');
-                console.log('ID Token:', idToken ? 'Yes' : 'No');
-                console.log('State:', state);
-                console.log('Error:', error);
+                // Check query parameters (?code=...)
+                if (!accessToken && !idToken) {
+                    const queryParams = new URLSearchParams(window.location.search);
+                    const code = queryParams.get('code');
+                    state = queryParams.get('state');
+                    error = queryParams.get('error');
+                    
+                    console.log('From query - Code:', code ? 'Yes' : 'No');
+                    
+                    if (code) {
+                        // Exchange code for token
+                        const tokens = await exchangeCodeForToken(code);
+                        accessToken = tokens.access_token;
+                        idToken = tokens.id_token;
+                    }
+                }
                 
+                // Handle errors
                 if (error) {
                     throw new Error(`Google authentication error: ${error}`);
                 }
@@ -57,59 +184,199 @@
                 const token = idToken || accessToken;
                 
                 if (!token) {
-                    throw new Error('No authentication token received');
-                }
-                
-                // Store token for main app to pick up
-                if (state) {
-                    localStorage.setItem(`oauth_token_${state}`, token);
-                    localStorage.setItem('oauth_redirect_time', Date.now().toString());
-                }
-                
-                // Try to send to opener if it exists
-                if (window.opener && !window.opener.closed) {
-                    window.opener.postMessage({
-                        type: 'CUBY_GOOGLE_AUTH',
-                        token: token,
-                        state: state,
-                        isIdToken: !!idToken
-                    }, '*');
-                }
-                
-                // Show success
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('success').style.display = 'block';
-                
-                // Countdown and close
-                let count = 3;
-                const countdownEl = document.getElementById('countdown');
-                const timer = setInterval(() => {
-                    count--;
-                    countdownEl.textContent = `Closing in ${count} second${count !== 1 ? 's' : ''}`;
+                    // Check if we have a code in the URL
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const code = urlParams.get('code');
                     
-                    if (count <= 0) {
-                        clearInterval(timer);
-                        window.close();
+                    if (code) {
+                        showMessage('Exchanging code for token...');
+                        const tokens = await exchangeCodeForToken(code);
+                        if (tokens.access_token) {
+                            await processToken(tokens.access_token, tokens.id_token, state);
+                            return;
+                        }
                     }
-                }, 1000);
+                    
+                    throw new Error('No authentication token received. URL: ' + window.location.href);
+                }
                 
-                // Auto-close after 5 seconds
-                setTimeout(() => {
-                    if (!window.closed) {
-                        window.close();
-                    }
-                }, 5000);
+                await processToken(token, idToken, state);
                 
             } catch (error) {
-                console.error('Callback error:', error);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('error').style.display = 'block';
-                document.getElementById('error-message').textContent = error.message;
+                console.error('OAuth callback error:', error);
+                showError(error.message);
             }
         }
         
-        // Start processing
+        async function processToken(accessToken, idToken, state) {
+            console.log('Processing token, State:', state);
+            
+            // Store token for main app
+            if (state) {
+                localStorage.setItem(`cuby_oauth_token_${state}`, accessToken);
+                if (idToken) {
+                    localStorage.setItem(`cuby_id_token_${state}`, idToken);
+                }
+                localStorage.setItem(`cuby_oauth_state`, state);
+                localStorage.setItem(`cuby_oauth_time`, Date.now().toString());
+            }
+            
+            // Also store in a generic location for easier polling
+            localStorage.setItem('cuby_last_oauth_token', accessToken);
+            localStorage.setItem('cuby_last_id_token', idToken || '');
+            
+            // Try to communicate with opener
+            if (window.opener && !window.opener.closed) {
+                console.log('Sending token to opener...');
+                window.opener.postMessage({
+                    type: 'CUBY_OAUTH_COMPLETE',
+                    token: accessToken,
+                    idToken: idToken,
+                    state: state,
+                    timestamp: Date.now()
+                }, '*');
+            }
+            
+            // Also try to send to parent (for iframes)
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'CUBY_OAUTH_COMPLETE',
+                    token: accessToken,
+                    idToken: idToken,
+                    state: state,
+                    timestamp: Date.now()
+                }, '*');
+            }
+            
+            // Show success
+            showSuccess();
+            
+            // Auto-close
+            if (CONFIG.autoClose) {
+                startCountdown();
+            }
+        }
+        
+        async function exchangeCodeForToken(code) {
+            console.log('Exchanging code for token...');
+            
+            // This would normally be done via a server
+            // For now, we'll show an error since we can't do client-side code exchange
+            throw new Error('Code exchange requires server-side implementation');
+            
+            // If you had a server endpoint, you would do:
+            /*
+            const response = await fetch('https://your-server.com/exchange-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code: code })
+            });
+            
+            if (!response.ok) throw new Error('Token exchange failed');
+            return await response.json();
+            */
+        }
+        
+        function showSuccess() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('success').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+        }
+        
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('success').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error-message').textContent = message;
+        }
+        
+        function showMessage(message) {
+            document.getElementById('loading').querySelector('p').textContent = message;
+        }
+        
+        function startCountdown() {
+            let seconds = 3;
+            const countdownEl = document.getElementById('countdown');
+            
+            const timer = setInterval(() => {
+                seconds--;
+                countdownEl.textContent = `Auto-closing in ${seconds} second${seconds !== 1 ? 's' : ''}...`;
+                
+                if (seconds <= 0) {
+                    clearInterval(timer);
+                    closeWindow();
+                }
+            }, 1000);
+        }
+        
+        function closeWindow() {
+            console.log('Closing window...');
+            
+            // Try multiple methods to close
+            if (window.opener) {
+                // Notify opener we're closing
+                try {
+                    window.opener.postMessage({
+                        type: 'CUBY_OAUTH_WINDOW_CLOSING',
+                        state: localStorage.getItem('cuby_oauth_state')
+                    }, '*');
+                } catch (e) {}
+                
+                // Close the window
+                setTimeout(() => {
+                    if (window.close) {
+                        window.close();
+                    }
+                }, 100);
+                
+            } else if (window.history.length > 1) {
+                // Try to go back
+                window.history.back();
+            } else {
+                // Show final message
+                document.body.innerHTML = `
+                    <div class="container">
+                        <div class="logo"></div>
+                        <h1 class="success">All Done!</h1>
+                        <p>You can safely close this window and return to the Cuby app.</p>
+                        <p class="countdown">The sign-in was successful.</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Listen for messages from main app
+        window.addEventListener('message', (event) => {
+            console.log('Callback page received message:', event.data);
+            
+            if (event.data && event.data.type === 'CUBY_PING') {
+                // Respond to ping from main app
+                event.source.postMessage({
+                    type: 'CUBY_PONG',
+                    ready: true,
+                    hasToken: !!localStorage.getItem('cuby_last_oauth_token')
+                }, '*');
+            }
+            
+            if (event.data && event.data.type === 'CUBY_GET_TOKEN') {
+                // Send token back if requested
+                const token = localStorage.getItem('cuby_last_oauth_token');
+                event.source.postMessage({
+                    type: 'CUBY_TOKEN_RESPONSE',
+                    token: token,
+                    state: localStorage.getItem('cuby_oauth_state')
+                }, '*');
+            }
+        });
+        
+        // Initialize
         document.addEventListener('DOMContentLoaded', handleOAuthCallback);
+        
+        // Also handle page load event (in case DOMContentLoaded already fired)
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            setTimeout(handleOAuthCallback, 100);
+        }
+        
     </script>
 </body>
 </html>
